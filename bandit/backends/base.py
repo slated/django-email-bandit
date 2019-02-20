@@ -1,5 +1,6 @@
 from __future__ import unicode_literals
 
+import re
 import logging
 
 from email.utils import parseaddr
@@ -24,6 +25,13 @@ class HijackBackendMixin(object):
         self.log_level = kwargs.pop('log_level', logging.DEBUG)
         super(HijackBackendMixin, self).__init__(*args, **kwargs)
 
+    def is_valid_email(self, e):
+        for pattern in self.approved_emails:
+            result = re.match(pattern, e, re.I)
+            if result:
+                return True
+        return False
+
     def send_messages(self, email_messages):
         admins = getattr(settings, 'ADMINS', ())
         server_email = getattr(settings, 'SERVER_EMAIL', 'root@localhost')
@@ -31,13 +39,14 @@ class HijackBackendMixin(object):
         if not isinstance(bandit_email, list):
             bandit_email = [bandit_email]
         whitelist_emails = set(getattr(settings, 'BANDIT_WHITELIST', ()))
-        approved_emails = set([server_email] + bandit_email + list(whitelist_emails) +
-                              [email for name, email in admins])
+        self.approved_emails = set([server_email, bandit_email, ] + list(whitelist_emails) +
+                              [email for name, email in admins] +
+                              [pattern for pattern in whitelist_emails])
 
         def is_approved(email):
             _, email = parseaddr(email)
             _, _, domain = email.rpartition('@')
-            return email in approved_emails or domain in whitelist_emails
+            return self.is_valid_email(email) or domain in whitelist_emails
 
         to_send = []
         logged_count = 0
